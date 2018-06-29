@@ -1,3 +1,4 @@
+
 <#
 -----------------------------------------------------------------------
 Name: CommVault Backup Report Script
@@ -23,9 +24,10 @@ param(
 #------------------------------------------------------------------------------------------------------------------------------
 # Imports
 #------------------------------------------------------------------------------------------------------------------------------
-."C:\Development\CommVaultScript\Helper_Scripts\Get_Servers.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\Hide_Window.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\User_Input.ps1"
+$file_path = $PSScriptRoot.ToString()
+."$file_path\Helper_Scripts\Get_Servers.ps1"
+."$file_path\Helper_Scripts\Hide_Window.ps1"
+."$file_path\Helper_Scripts\User_Input.ps1"
 
 #------------------------------------------------------------------------------------------------------------------------------
 # Debug menu options
@@ -74,7 +76,7 @@ $server_db_name = "ServerList.xlsx"
 #Get the list of servers from (ServerList.xlsx)
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "GETTING THE LIST OF SERVERS"
-$server_list = Get-ServerList -critical -Verbose:$false
+$server_list = Get-ServerList -critical -file_path $file_path -Verbose:$false
 
 #--------------------------------------------------------------------
 # Get the CommVault reports from Outlook and save a temp to the desktop
