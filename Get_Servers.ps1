@@ -3,19 +3,19 @@
 Name: Server Information Retrieval Script
 Author:	Anthony Dunaway
 Date: 06/15/18
-Updated: 06/18/18
+Updated: 06/27/18
 Description:
 Helper script to grab our list of servers and their critical status.
 If critical flag is passed returns a hashtable with the server name as the key 
 and the critical status as the value. Otherwise returns a list of the servers
 -----------------------------------------------------------------------
 #>
-Function Get-ServerInformation{
+Function Get-ServerList{
 	[CmdletBinding()]
 	param(
-		[switch] $critical
+		[switch] $critical,
+		[string] $file_path
 	)
-    $file_path = Get-Location
     $all_servers_dict = @{}
 	$all_servers = @()
 	Write-Verbose "Opening Excel"
@@ -32,7 +32,7 @@ Function Get-ServerInformation{
 				$current_server = $servers.Cells.Item($line,"A").Value()
 				$current_server = $current_server.ToString().Trim()
 				Write-Debug "Current server : $current_server"
-				$server_is_critical = $servers.Cells.Item($line,"G").Value()
+				$server_is_critical = $servers.Cells.Item($line,"F").Value()
 				Write-Debug "Critical Status : $server_is_critical"
 				$all_servers_dict.add($current_server, $server_is_critical)
 		} 
