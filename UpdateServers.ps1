@@ -3,7 +3,7 @@
 Name: CommVault Backup Report Script Server Updater
 Author: Anthony Dunaway
 Date: 03/15/18
-Updated: 06/28/18
+Updated: 06/29/18
 Description:
 Adds a new server, deletes a server, or updates a current server. 
 Servers can be entered individually or in bulk via a csv file. 
@@ -13,18 +13,20 @@ notified. if the staff are unknown the file will be added to tracking but
 not to email notifications.
 -----------------------------------------------------------------------
 #>
-
-."C:\Development\CommVaultScript\Helper_Scripts\Add_Staff.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\Delete_Server.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\Delete_Staff.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\New_Server.ps1"
-."C:\Development\CommVaultScript\Helper_Scripts\User_Input.ps1"
+$file_path = $PSScriptRoot.ToString()
+#-----------------------------------------------------------------------------------------------------------------------------
+# Imports
+#-----------------------------------------------------------------------------------------------------------------------------
+."$file_path\Helper_Scripts\Add_Staff.ps1"
+."$file_path\Helper_Scripts\Delete_Server.ps1"
+."$file_path\Helper_Scripts\Delete_Staff.ps1"
+."$file_path\Helper_Scripts\New_Server.ps1"
+."$file_path\Helper_Scripts\User_Input.ps1"
 
 #-----------------------------------------------------------------------------------------------------------------------------
 #Get Server Information: Name, critical, AppDB, staff, and entry type - manually or through CSV
 #-----------------------------------------------------------------------------------------------------------------------------
 Write-Host "CommVault Script Server Updater"
-$file_path = Get-Location
 $more_updates = 1
 $application = "Unknown"
 $csv = Get-UserInput -Question "Update with the Staff Server List CSV?    :"
@@ -54,7 +56,7 @@ if($csv -eq 0){
 				$appdb = Get-UserInput -Question "Is this an application database?  	  :"
 				$application = Read-Host "What application uses this server?        :"
 				Add-NewServer -new_server $new_server -critical $critical -appdb $appdb -file_path $file_path -application $application
-				$add_person = Get-UserInput -Question "Are you adding a person?                  :"
+				$add_person = Get-UserInput -Question "Are you adding a person to $new_server ?    :"
 				if($add_person -eq 1){
 					$staffmod = 1
 					$add_remove = 1
