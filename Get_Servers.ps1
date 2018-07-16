@@ -17,7 +17,7 @@ Function Get-ServerList{
 		[switch] $critical,
 		[string] $file_path
 	)
-    $all_servers_dict = @{}
+    $all_servers_dict = [ordered]@{}
 	$all_servers = @()
 	Write-Verbose "Opening Excel"
     $excel = New-Object -comobject Excel.Application -Verbose:$false
@@ -32,26 +32,22 @@ Function Get-ServerList{
 		For($line=2; $line -le $server_count - 1; $line++){
 			$server_data = @()
 			$current_server = $servers.Cells.Item($line,"A").Value().ToString().Trim()
-			Write-Debug "Current server : $current_server"
 			$server_is_critical = $servers.Cells.Item($line,"F").Value().ToString().Trim()
-			Write-Debug "Critical Status : $server_is_critical"
+			$appdb = $servers.Cells.Item($line,"G").Value()
 			$staff = $servers.Cells.Item($line,"H").Value().ToString().Trim()
-			Write-Debug "Staff are $staff"
 			$applications = $servers.Cells.Item($line,"I").Value().ToString().Trim()
-			Write-Debug "Applications include $applications"
 			$server_data += $server_is_critical
+			$server_data += $appdb
 			$server_data += $staff
 			$server_data += $applications
 			$all_servers_dict.add($current_server, $server_data)
-		} 
+		}
 	}
 	elseif($critical -eq $true){
 		For($line=2; $line -le $server_count - 1; $line++){
 			$current_server = $servers.Cells.Item($line,"A").Value()
 			$current_server = $current_server.ToString().Trim()
-			Write-Debug "Current server : $current_server"
 			$server_is_critical = $servers.Cells.Item($line,"F").Value()
-			Write-Debug "Critical Status : $server_is_critical"
 			$all_servers_dict.add($current_server, $server_is_critical)
 		}
 	}
@@ -59,7 +55,6 @@ Function Get-ServerList{
 		For($line=2; $line -le $server_count - 1; $line++){
 				$current_server = $servers.Cells.Item($line,"A").Value()
 				$current_server = $current_server.ToString().Trim()
-				Write-Debug "Current server : $current_server"
 				$all_servers += $current_server
 		} 
 	}
@@ -69,8 +64,9 @@ Function Get-ServerList{
     [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($servers)
     [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($server_db)
     [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
+	[GC]::Collect()
 	Write-Verbose "List Complete"
-	if($critical -eq $true){
+	if(($critical -eq $True) -or ($full -eq $True)){
 		Return $all_servers_dict
 	}
 	else{
@@ -79,12 +75,12 @@ Function Get-ServerList{
 }#Function
 
 #test the functionality
-# $test = Get-ServerList -verbose -full -file_path "I:\ISE\CommVault\CommVaultScript\"
+#$test = Get-ServerList -verbose -full -file_path "I:\ISE\CommVault\CommVaultScript\"
 # $test = Get-ServerList -verbose -critical -file_path "I:\ISE\CommVault\CommVaultScript\"
 # $test = Get-ServerList -verbose -file_path "I:\ISE\CommVault\CommVaultScript\"
 # foreach($server in $test.keys){
-	# Write-Verbose $server
+	# Write-Host $server
 	# foreach($stat in $test[$server]){
-		# Write-Verbose $stat
+		# Write-Host $stat
 	# }
 # }
