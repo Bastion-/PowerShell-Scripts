@@ -3,7 +3,7 @@
 Name: CommVault Backup Report Script
 Author: Anthony Dunaway
 Date: 01/16/18
-Updated: 07/12/18
+Updated: 07/13/18
 Description:
 This script gets all of the CommVault backup reports from the user's outlook inbox,
 copies our servers onto a new worksheet, and records missing and failed backups to their own
@@ -19,7 +19,6 @@ param(
 	[switch] $debug,
 	[switch] $verbose
 )
-
 #------------------------------------------------------------------------------------------------------------------------------
 # Imports
 #------------------------------------------------------------------------------------------------------------------------------
@@ -30,21 +29,20 @@ $file_path = $PSScriptRoot.ToString()
 ."$file_path\Helper_Scripts\User_Input.ps1"
 
 $start_time = Get-Date
-
 #------------------------------------------------------------------------------------------------------------------------------
 # Debug menu options
 #------------------------------------------------------------------------------------------------------------------------------
 if($debug -eq $true){
 	Write-Host "RUNNING IN DEBUG MODE"
-	#Allows you to run the script as much as you like on the same email without the need to manually mark the message as unread
+	#Decide to mark emails as read or not
 	$mark_read = Get-UserInput -Question 'Mark emails as read?            :'
-	#Enables mass failure protection. Notices will not be sent if there are more than 10 failures
+	#Enables mass failure protection. Failure notices will not be sent if there are more than 10 failures
 	$mass_failure_check = Get-UserInput -Question 'Enable mass failure protection? :'
-	#When testing you might not want to save files to sharepoint over and over again
+	#Decide whether to save to sharepoint
 	$save_to_sharepoint = Get-UserInput -Question 'Save this file to sharepoint?   :'
-	#Stops script from emailing staff. Useful to prevent false alerts when testing
+	#Decide whether to send failure notices to staff
 	$send_reports = Get-UserInput -Question 'Inform staff of failed backups? :'
-	#Display Excel windows
+	#Decide whether to display Excel windows
 	$show_excel = Get-UserInput -Question 'Display Excel Windows?          :'
 	#Prints status updates to the console
 	$talk_to_me = Get-UserInput -Question 'Run script in verbose?          :'
@@ -68,22 +66,31 @@ else{
 	#Not writing any messages to console, hide window and run in the background
 	[Console.Window]::ShowWindow($consolePtr, 0)
 }
-
 Write-Verbose "CREATING THE COMMVAULT BACKUP REPORT"
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Get the list of servers from (ServerList.xlsx)
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "GETTING THE LIST OF SERVERS"
-$server_list = Get-ServerList -critical -file_path $file_path -Verbose:$false
+$server_list = Get-ServerList -full -file_path $file_path -Verbose:$false
+#------------------------------------------------------------------------------------------------------------------------------
+#Preparing the Excel ComObject
+#------------------------------------------------------------------------------------------------------------------------------
+$excel = New-Object -comobject Excel.Application -Verbose:$false
+if($show_excel -eq 1){
+	$excel.Visible = $True
+}
 
+#Get the server DB
+$server_db_name = "ServerList.xlsx"
+$server_db = $excel.Workbooks.Open("$file_path\$server_db_name")
+$server_stats = $server_db.worksheets.item(1)
 #------------------------------------------------------------------------------------------------------------------------------
 # Get the CommVault reports from Outlook and save a temp to the desktop
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "GETTING REPORTS FROM OUTLOOK"
 Add-type -assembly "Microsoft.Office.Interop.Outlook" | out-null
 $AllFolders = "Microsoft.Office.Interop.Outlook.olDefaultFolders" -as [type]
-$outlook = new-object -comobject outlook.application
+$outlook = new-object -comobject outlook.application -Verbose:$False
 $namespace = $outlook.GetNameSpace("MAPI")
 $mailbox = $namespace.getDefaultFolder($AllFolders::olFolderInBox)
 $messages = @()
@@ -105,32 +112,21 @@ if($cv_reports.Length -eq 0){
 	Write-Verbose "NO NEW REPORTS WERE FOUND"
 	Exit
 }
-
 foreach($message in $cv_reports) {
 	$file = $message.Attachments.Item(1).filename
 	$split_name = $file.ToString().split("_")
 	if($split_name[0] -eq "BackupJobSummaryReport"){
 		$savename = "CommVaultBackupReport-"
-		#This gets the date out of the attachment name, formats it, and appends it to the report name
+		#Get the date out of the attachment name, format it, and append it to the report name
 		$savename = $savename + $split_name[4] + $split_name[2] + $split_name[3]
 		$message.Attachments.Item(1).saveasfile((Join-Path $file_path "$savename.xls"))
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Open the CommVault report in Excel, setup report workbook
 #------------------------------------------------------------------------------------------------------------------------------
 		Write-Verbose "OPENING THE FILE IN EXCEL"
-		$excel = New-Object -comobject Excel.Application -Verbose:$false
-		if($show_excel -eq 1){
-			$excel.Visible = $True
-		}
 		$excel.DisplayAlerts = $False
 		$xlFixedformat = [Microsoft.Office.Interop.Excel.XlFileformat]::xlWorkbookDefault
 		$workbook = $excel.Workbooks.Open("$file_path\$savename.xls")
-
-		#Get the server DB
-		$server_db_name = "ServerList.xlsx"
-		$server_db = $excel.Workbooks.Open("$file_path\$server_db_name")
-		$server_stats = $server_db.worksheets.item(1)
 
 		#Add worksheets for matching, failed, and missing servers and name them
 		$workbook.Sheets.Add() | out-null
@@ -143,16 +139,13 @@ foreach($message in $cv_reports) {
 		$missing.name = 'MissingServers'
 		$match.name = 'Match'
 		$failed.name = 'Failed'
-
-		#number of rows in the original excel report
-		$num_rows = ($original.UsedRange.Rows).count
 		
 		#Find the report header.
 		$location = $original.Cells.Find("Host Name")
 		$header_begin = $location.Row
 		$header_end = $header_begin +1
 
-		#find the first virtual machine header and status column
+		#Find the first virtual machine header and status column
 		$status_column = "D"
 		$location = $original.Cells.Find("Machine Name")
 		$virtual_row = $location.Row
@@ -196,7 +189,6 @@ foreach($message in $cv_reports) {
 		$match.Cells.Item(2,$critical_column).Interior.ColorIndex = 15
 		$failed.Cells.Item(1,$critical_column).Interior.ColorIndex = 15
 		$failed.Cells.Item(2,$critical_column).Interior.ColorIndex = 15
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Copy our servers onto the match worksheet
 #------------------------------------------------------------------------------------------------------------------------------
@@ -219,7 +211,7 @@ foreach($message in $cv_reports) {
 			$server_location = $original.Cells.Find($server)
 			if($server_location){
 				$row = $server_location.Row
-				$critical = $server_list[$server]
+				$critical = $server_list[$server][0]
 				if($row -lt $virtual_row){
 					foreach($status in $status_list.keys){
 						if($original.Cells.Item($row, [int]$status).Value() -gt 0){
@@ -296,14 +288,12 @@ foreach($message in $cv_reports) {
 			else{
 				$missing_servers += $server
 			}
-		}
-		
+		}	
 #------------------------------------------------------------------------------------------------------------------------------
-#Move critical columns from S to column A
+#Move critical column from S to A
 #------------------------------------------------------------------------------------------------------------------------------
 		Move-Columns -worksheet $match -from "S" -to "A"
 		Move-Columns -worksheet $failed -from "S" -to "A"
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Check for any missing servers and save them to missing worksheet
 #------------------------------------------------------------------------------------------------------------------------------
@@ -320,7 +310,6 @@ foreach($message in $cv_reports) {
 				}
 			}
 		}
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Save the file to the Sharepoint site, open it for review, delete the temp file
 #------------------------------------------------------------------------------------------------------------------------------
@@ -355,7 +344,6 @@ foreach($message in $cv_reports) {
 		if($mark_read -eq 1){
 			$message.UnRead = $False
 		}
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Report generated, notify report creator via email
 #------------------------------------------------------------------------------------------------------------------------------
@@ -374,13 +362,12 @@ foreach($message in $cv_reports) {
 		$mail.Send()
 	}
 }
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Check if any servers need to be reported
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "CHECKING if ANY SERVERS NEED TO BE REPORTED"
 #Check the server status database and create list of servers with failed backups
-$failed_servers = @()
+$failed_servers = @{}
 $server_count = ($server_stats.UsedRange.Rows).count
 for($line=2; $line -le $server_count; $line++){
 	$server_name = $server_stats.Cells.Item($line,$server_ref).Value()
@@ -389,14 +376,15 @@ for($line=2; $line -le $server_count; $line++){
 	$ignore = $server_stats.Cells.Item($line, $ignore_ref).Value()
 	if($ignore -eq 0){
 		if($server_status -eq "Missing"){
-			$failed_servers += $server_name
+			$failed_servers.add($server_name,$server_status)
 		}
 		elseif($failed_backup -eq 1){
-			$failed_servers += $server_name
+			$failed_servers.add($server_name,$server_status)
 		}
 	}
 }
-
+$server_db.Close()
+$excel.Quit()
 #------------------------------------------------------------------------------------------------------------------------------
 #Lookup who needs to know about failures
 #------------------------------------------------------------------------------------------------------------------------------
@@ -415,20 +403,18 @@ if($failed_servers.Count -gt 0){
 	}
 	Write-Verbose "LOOKING UP WHO NEEDS TO KNOW ABOUT THE FAILURES"
 	#Get the stats of each failed server
-	foreach($bad_server in $failed_servers){
-		$bad_row = $server_stats.Cells.Find($bad_server).Row
-		$is_critical = $server_list[$bad_server]
-		$backup_status = $server_stats.Cells.Item($bad_row, $status_ref).Value()
-		$notify_drm = $server_stats.Cells.Item($bad_row, $appdb_ref).Value()
-		$people_to_notify = $server_stats.Cells.Item($bad_row, $staff_ref).Value().ToString().Split(",")
-		$applications = $server_stats.Cells.Item($bad_row, $app_ref).Value().ToString()
+	foreach($bad_server in $failed_servers.Keys){
+		$is_critical = $server_list[$bad_server][0]
+		$backup_status = $failed_servers[$bad_server]
+		$notify_drm = $server_list[$bad_server][1]
+		$people_to_notify = $server_list[$bad_server][2].ToString().Split(",")
+		$applications = $server_list[$bad_server][3].ToString()
 		if($is_critical -eq 1){
 			$type = "CRITICAL"
 		}
 		else{
 			$type = "NON-CRITICAL"
 		}
-
 #------------------------------------------------------------------------------------------------------------------------------
 #Create the email notifications and send them out
 #------------------------------------------------------------------------------------------------------------------------------
@@ -442,7 +428,6 @@ if($failed_servers.Count -gt 0){
 			Write-Verbose "if notifications are enabled they will be sent to $person"
 			if($send_reports -eq 1){
 				Write-Verbose "REPORTING FAILURES TO THE STAFF RESPONSIBLE"
-				#Create the email notification and send it out.
 				$mail = $outlook.CreateItem(0)
 				$mail.To = $person
 				$mail.Cc = $team_lead
@@ -482,13 +467,6 @@ This message was generated by a script. if you believe you have received this me
 		}
 	}
 }
-$server_db.Close()
 $end_time = Get-Date
 $seconds = ($end_time - $start_time).TotalSeconds
 Write-Host "Total time taken to run the report was $seconds seconds"
-#------------------------------------------------------------------------------------------------------------------------------
-#Cleaning up so there are not a bunch of Excel tasks left running.
-#------------------------------------------------------------------------------------------------------------------------------
-$excel.Quit()
-[void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
-[GC]::Collect()
