@@ -9,7 +9,21 @@ Create a PSCredential Object from secure file
 -----------------------------------------------------------------------
 #>
 
-."C:\Development\Helper_Scripts\Select_Path.ps1"
+function Select-Path(){
+	
+	[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null
+	
+    $path_name = New-Object System.Windows.Forms.FolderBrowserDialog
+    $path_name.Description = "Select a folder"
+    $path_name.rootfolder = "MyComputer"
+
+    if($path_name.ShowDialog() -eq "OK")
+    {
+        $path += $path_name.SelectedPath
+    }
+    return $path
+	
+}
 
 function Get-MyCredentials(){
 	[cmdletbinding()]
