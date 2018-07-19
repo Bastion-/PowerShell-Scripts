@@ -3,7 +3,7 @@
 Name: CommVault Backup Report Script
 Author: Anthony Dunaway
 Date: 01/16/18
-Updated: 07/13/18
+Updated: 07/19/18
 Description:
 This script gets all of the CommVault backup reports from the user's outlook inbox,
 copies our servers onto a new worksheet, and records missing and failed backups to their own
@@ -23,12 +23,11 @@ param(
 # Imports
 #------------------------------------------------------------------------------------------------------------------------------
 $file_path = $PSScriptRoot.ToString()
-."$file_path\Helper_Scripts\Get_Servers.ps1"
+."$file_path\Helper_Scripts\Get_Server_Objects.ps1"
 ."$file_path\Helper_Scripts\Hide_Window.ps1"
 ."$file_path\Helper_Scripts\Swap_Columns.ps1"
 ."$file_path\Helper_Scripts\User_Input.ps1"
 
-$start_time = Get-Date
 #------------------------------------------------------------------------------------------------------------------------------
 # Debug menu options
 #------------------------------------------------------------------------------------------------------------------------------
@@ -50,14 +49,16 @@ if($debug -eq $true){
 	$update_db = Get-UserInput -Question 'Update the server DB?           :'
 }
 else{
-	$mark_read = 0
+	$mark_read = 1
 	$mass_failure_check = 1
-	$save_to_sharepoint = 0
-	$send_reports = 0
+	$save_to_sharepoint = 1
+	$send_reports = 1
 	$show_excel = 0
-	$talk_to_me = 1
+	$talk_to_me = 0
 	$update_db = 1
 }
+
+$start_time = Get-Date
 
 if(($talk_to_me -eq 1) -or ($verbose -eq $true)){
 	$VerbosePreference = "Continue"
@@ -71,7 +72,8 @@ Write-Verbose "CREATING THE COMMVAULT BACKUP REPORT"
 #Get the list of servers from (ServerList.xlsx)
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "GETTING THE LIST OF SERVERS"
-$server_list = Get-ServerList -full -file_path $file_path -Verbose:$false
+$server_list = Get-ServerList -file_path $file_path -Verbose:$false
+
 #------------------------------------------------------------------------------------------------------------------------------
 #Preparing the Excel ComObject
 #------------------------------------------------------------------------------------------------------------------------------
@@ -112,6 +114,7 @@ if($cv_reports.Length -eq 0){
 	Write-Verbose "NO NEW REPORTS WERE FOUND"
 	Exit
 }
+
 foreach($message in $cv_reports) {
 	$file = $message.Attachments.Item(1).filename
 	$split_name = $file.ToString().split("_")
@@ -207,11 +210,11 @@ foreach($message in $cv_reports) {
 		#Hash table of Excel background color values
 		$color_values = @{Active = 42; Completed = 35; CWE = 40; CWW = 8; Delayed = 39; Failed = 18; Killed = 38; Unknown = 18}
 		
-		foreach($server in $server_list.keys){
-			$server_location = $original.Cells.Find($server)
+		foreach($server in $server_list){
+			$server_location = $original.Cells.Find($server.Name)
 			if($server_location){
 				$row = $server_location.Row
-				$critical = $server_list[$server][0]
+				$critical = $server.Critical
 				if($row -lt $virtual_row){
 					foreach($status in $status_list.keys){
 						if($original.Cells.Item($row, [int]$status).Value() -gt 0){
@@ -249,7 +252,7 @@ foreach($message in $cv_reports) {
 #Update the server status database (ServerList.xlsx)
 #------------------------------------------------------------------------------------------------------------------------------
 				if($update_db -eq 1){
-					$stats_location = $server_stats.Cells.Find($server)
+					$stats_location = $server_stats.Cells.Find($server.Name)
 					$stats_row = $stats_location.Row
 					$server_stats.Cells.Item($stats_row, $status_ref).Value() = $backup_status
 					if($backup_status -eq "Completed"){
@@ -286,7 +289,7 @@ foreach($message in $cv_reports) {
 				}
 			}
 			else{
-				$missing_servers += $server
+				$missing_servers += $server.Name
 			}
 		}	
 #------------------------------------------------------------------------------------------------------------------------------
@@ -404,11 +407,12 @@ if($failed_servers.Count -gt 0){
 	Write-Verbose "LOOKING UP WHO NEEDS TO KNOW ABOUT THE FAILURES"
 	#Get the stats of each failed server
 	foreach($bad_server in $failed_servers.Keys){
-		$is_critical = $server_list[$bad_server][0]
+		$server = $server_list| Where-Object {$_.Name -eq $bad_server}
+		$is_critical = $server.Critical
 		$backup_status = $failed_servers[$bad_server]
-		$notify_drm = $server_list[$bad_server][1]
-		$people_to_notify = $server_list[$bad_server][2].ToString().Split(",")
-		$applications = $server_list[$bad_server][3].ToString()
+		$notify_drm = $server.AppDB
+		$people_to_notify = $server.Staff
+		$applications = $server.Applications
 		if($is_critical -eq 1){
 			$type = "CRITICAL"
 		}
