@@ -180,7 +180,7 @@ function Send-Log(){
 .EXAMPLE
 	Send-Log -from "user@domain.com" -to "user@domain.com" -attach "C:\Development\script_log.txt" -gmail
 .NOTES
-	Requires Get_Credentials.ps1 function Get-MyCredentials. Also requires firewall access to port 587
+	Requires firewall access to port 587
 	If you want to use the Get-MyCredentials function you will need to provide the path to your 
 	encrypted password file. 
 #>
