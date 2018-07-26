@@ -3,7 +3,7 @@
 Name: Server Information Retrieval Script
 Author:	Anthony Dunaway
 Date: 06/15/18
-Updated: 07/19/18
+Updated: 07/26/18
 Description:
 Helper script to grab our list of servers.
 Returns a list of Server objects
@@ -33,8 +33,9 @@ Function Get-ServerList{
 		$critical = $servers.Cells.Item($line,"F").Value().ToString().Trim()
 		$appdb = $servers.Cells.Item($line,"G").Value()
 		$staff = $servers.Cells.Item($line,"H").Value().ToString().Trim().Split(",")
-		$apps = $servers.Cells.Item($line,"I").Value().ToString().Trim().Split(",")
-		$all_servers += New-Server -name $current_server -critical $critical -appdb $appdb -staff $staff -applications $apps
+		$lead = $servers.Cells.Item($line,"I").Value().ToString().Trim()
+		$apps = $servers.Cells.Item($line,"J").Value().ToString().Trim().Split(",")
+		$all_servers += New-Server -name $current_server -critical $critical -appdb $appdb -staff $staff -lead $lead -applications $apps
 	}
 	Write-Verbose "Closing Excel and Cleaning Up"
     $excel.Workbooks.Close()
