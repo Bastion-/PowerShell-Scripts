@@ -3,7 +3,7 @@
 Name: CommVault Backup Report Script
 Author: Anthony Dunaway
 Date: 01/16/18
-Updated: 07/19/18
+Updated: 07/26/18
 Description:
 This script gets all of the CommVault backup reports from the user's outlook inbox,
 copies our servers onto a new worksheet, and records missing and failed backups to their own
@@ -49,12 +49,12 @@ if($debug -eq $true){
 	$update_db = Get-UserInput -Question 'Update the server DB?           :'
 }
 else{
-	$mark_read = 1
+	$mark_read = 0
 	$mass_failure_check = 1
-	$save_to_sharepoint = 1
-	$send_reports = 1
+	$save_to_sharepoint = 0
+	$send_reports = 0
 	$show_excel = 0
-	$talk_to_me = 0
+	$talk_to_me = 1
 	$update_db = 1
 }
 
@@ -67,6 +67,7 @@ else{
 	#Not writing any messages to console, hide window and run in the background
 	[Console.Window]::ShowWindow($consolePtr, 0)
 }
+
 Write-Verbose "CREATING THE COMMVAULT BACKUP REPORT"
 #------------------------------------------------------------------------------------------------------------------------------
 #Get the list of servers from (ServerList.xlsx)
@@ -86,6 +87,7 @@ if($show_excel -eq 1){
 $server_db_name = "ServerList.xlsx"
 $server_db = $excel.Workbooks.Open("$file_path\$server_db_name")
 $server_stats = $server_db.worksheets.item(1)
+
 #------------------------------------------------------------------------------------------------------------------------------
 # Get the CommVault reports from Outlook and save a temp to the desktop
 #------------------------------------------------------------------------------------------------------------------------------
@@ -112,6 +114,12 @@ $cv_reports = $cv_reports | Sort-Object -Property SentOn
 
 if($cv_reports.Length -eq 0){
 	Write-Verbose "NO NEW REPORTS WERE FOUND"
+	$excel.Workbooks.Close()
+    $excel.Quit()
+    [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($server_stats)
+    [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($server_db)
+    [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
+	[GC]::Collect()
 	Exit
 }
 
@@ -174,7 +182,8 @@ foreach($message in $cv_reports) {
 		$critical_ref = "F"
 		$appdb_ref = "G"
 		$staff_ref = "H"
-		$app_ref = "I"
+		$lead_ref = "I"
+		$app_ref = "J"
 
 		#Copy the header and paste it into the first row of match and failed sheets add missing sheet header
 		$header = "A$($header_begin):A$($header_end)"
@@ -212,6 +221,9 @@ foreach($message in $cv_reports) {
 		
 		foreach($server in $server_list){
 			$server_location = $original.Cells.Find($server.Name)
+			while($original.Cells.Item($server_location.Row, 1).Value().ToString() -ne $server.Name){
+				$server_location = $original.Cells.FindNext($server_location)
+			}
 			if($server_location){
 				$row = $server_location.Row
 				$critical = $server.Critical
@@ -393,14 +405,14 @@ $excel.Quit()
 #------------------------------------------------------------------------------------------------------------------------------
 if($failed_servers.Count -gt 0){
 	if($mass_failure_check -eq 1){
-		if($failed_servers.Count -gt 10){
+		if($failed_servers.Count -gt 20){
 			#More than 10 servers had bad backups. Don't send notices. Manually verify that the backups failed.
 			$send_reports = 0
 			$mail = $outlook.CreateItem(0)
 			$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
 			$mail.To = $me
 			$mail.Subject = "Mass Server Backup Failure"
-			$mail.Body = "More than 10 servers had backup failures. Verify that the report was generated correctly"
+			$mail.Body = "More than 20 servers had backup failures. Verify that the report was generated correctly"
 			$mail.Send()
 		}
 	}
@@ -422,43 +434,45 @@ if($failed_servers.Count -gt 0){
 #------------------------------------------------------------------------------------------------------------------------------
 #Create the email notifications and send them out
 #------------------------------------------------------------------------------------------------------------------------------
+		$to = ""
 		foreach($person in $people_to_notify){
 			$person = $person + "suffix"
-			#This gets the current user's email address. I found the code here:
-			#https://stackoverflow.com/questions/8666627/how-to-obtain-email-of-the-logged-in-user-in-powershell
-			$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
-			$team_lead = "email"
-			$drm = "email"
-			Write-Verbose "if notifications are enabled they will be sent to $person"
-			if($send_reports -eq 1){
-				Write-Verbose "REPORTING FAILURES TO THE STAFF RESPONSIBLE"
-				$mail = $outlook.CreateItem(0)
-				$mail.To = $person
-				$mail.Cc = $team_lead
-				if($notify_drm -eq 1){
-					$mail.Cc = "$team_lead; $drm"
-				}
-				if($backup_status -eq "Missing"){
-					$mail.Subject = "$type Server $bad_server Was Missed"
-					$mail.Body = "The $type server $bad_server was not included in the CommVault backup. Please investigate why the 
+			$to += "$person; "
+		}
+		#This gets the current user's email address. I found the code here:
+		#https://stackoverflow.com/questions/8666627/how-to-obtain-email-of-the-logged-in-user-in-powershell
+		$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
+		$team_lead = $server.Lead + "suffix"
+		$drm = "email"
+		Write-Verbose "if notifications are enabled they will be sent to $people_to_notify"
+		if($send_reports -eq 1){
+			Write-Verbose "REPORTING FAILURES TO THE STAFF RESPONSIBLE"
+			$mail = $outlook.CreateItem(0)
+			$mail.To = $to
+			$mail.Cc = $team_lead
+			if($notify_drm -eq 1){
+				$mail.Cc = "$team_lead; $drm"
+			}
+			if($backup_status -eq "Missing"){
+				$mail.Subject = "$type Server $bad_server Was Missed"
+				$mail.Body = "The $type server $bad_server was not included in the CommVault backup. Please investigate why the 
 server was missed. $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
-					$mail.Send()
-				}
-				elseif(($backup_status -eq "Active") -and ($is_critical -eq 1)){
-					$mail.Subject = "CRITICAL Server $bad_server Backup is Active"
-					$mail.Body = "The backup for CRITICAL server $bad_server is still Active. Please monitor this backup for completion.
+				$mail.Send()
+			}
+			elseif(($backup_status -eq "Active") -and ($is_critical -eq 1)){
+				$mail.Subject = "CRITICAL Server $bad_server Backup is Active"
+				$mail.Body = "The backup for CRITICAL server $bad_server is still Active. Please monitor this backup for completion.
 $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
-					$mail.Send()
-				}
-				else{
-					$mail.Subject = "$type Server $bad_server Failed Backup"
-					$mail.Body = "The backup for $type server $bad_server had status $backup_status. It has failed or had 
+				$mail.Send()
+			}
+			else{
+				$mail.Subject = "$type Server $bad_server Failed Backup"
+				$mail.Body = "The backup for $type server $bad_server had status $backup_status. It has failed or had 
 errors for 3 days or more. Please investigate. $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
-					$mail.Send()
-				}
+				$mail.Send()
 			}
 		}
 		if($send_reports -eq 1){
