@@ -3,7 +3,7 @@
 Name: Create Server Object
 Author:	Anthony Dunaway
 Date: 07/19/18
-Updated: 07/19/18
+Updated: 07/26/18
 Description:
 Creates a new server object for use in the CommVault script
 -----------------------------------------------------------------------
@@ -21,6 +21,8 @@ function New-Server {
 		[Parameter(Mandatory=$True)]
 		[string[]]$staff, 
 		[Parameter(Mandatory=$True)]
+		[string]$lead, 
+		[Parameter(Mandatory=$True)]
 		[string[]]$applications
 	)
 	
@@ -29,6 +31,7 @@ function New-Server {
 		Critical = $critical
 		AppDB = $appdb
 		Staff = $staff
+		Lead = $lead
 		Applications = $applications
 	}
 }
