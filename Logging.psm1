@@ -14,7 +14,7 @@ function Get-MyCredentials(){
 	[cmdletbinding()]
 	param(
 		[string]$filepath = "C:\Development\Password_Files",
-		[string]$username = "OR0237713",
+		[string]$username = "username",
 		[string]$filename = "password.txt"
 	)
 	
