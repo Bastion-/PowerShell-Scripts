@@ -3,7 +3,7 @@
 Name: Logging Module
 Author:	Anthony Dunaway
 Date: 07/20/18
-Updated: 07/24/18
+Updated: 07/26/18
 Description:
 Logging Module
 -----------------------------------------------------------------------
@@ -14,14 +14,13 @@ function Get-MyCredentials(){
 	[cmdletbinding()]
 	param(
 		[string]$filepath = "C:\Development\Password_Files",
-		[string]$username = "username",
+		[string]$username = "OR0237713",
 		[string]$filename = "password.txt"
 	)
 	
 	$password = get-content "$filepath\$filename" | convertto-securestring
 	$credentials = new-object System.Management.Automation.PSCredential($username, $password)
 	Return $credentials
-	
 }
 
 #Returns the name of the calling script. PRIVATE
@@ -163,6 +162,7 @@ function Add-LogEntry(){
 	}
 	$content = $prefix + $content	
 	Add-Content -Path "$path\$script" -Value $content
+	Write-Debug "Content"
 }
 
 function Send-Log(){
@@ -175,14 +175,16 @@ function Send-Log(){
 	Email address of recipient
 .PARAMETER attach
 	Path to the log file to be sent as an attachment
+.PARAMETER credentials
+	Array containing strings with credential info. 0 = user name, 1 = path to password file, 2 = password file name
 .PARAMETER gmail
 	Switch, if used email is sent via Gmail rather than Outlook
 .EXAMPLE
-	Send-Log -from "user@domain.com" -to "user@domain.com" -attach "C:\Development\script_log.txt" -gmail
+	$credentials = @("anthony.dunaway", "C:\Development\Password_Files", "gmail.txt")
+	Send-Log -from "user@domain.com" -to "user@domain.com" -credentials $credentials -attach "C:\Development\script_log.txt" -gmail
 .NOTES
-	Requires firewall access to port 587
-	If you want to use the Get-MyCredentials function you will need to provide the path to your 
-	encrypted password file. 
+	Requires Get_Credentials.ps1 function Get-MyCredentials. Outlook requires firewall access to port 587
+	Credential parameter required to send the log. 
 #>
 	[cmdletbinding()]
 	param(
@@ -193,17 +195,24 @@ function Send-Log(){
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		[string]$attach,
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
-		[string]$username = "username",
+		[string[]]$credentials = @("anthony.dunaway", "C:\Development\Password_Files", "gmail.txt"),
+		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
+		$pscred = 0,
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		[switch]$gmail
 	)
 	
+	if($pscred -ne 0){
+		$credential = $pscred
+	}
+	else{
+		$credential = Get-MyCredentials -username $credentials[0] -filepath $credentials[1] -filename $credentials[2]
+	}
+	
 	if($gmail){
-		$credential = Get-MyCredentials -username $username -filename "gmail.txt"
 		$server = "smtp.gmail.com"
 	}
 	else{
-		$credential = Get-MyCredentials -username $username
 		$server = "smtp_mail.outlook.com"
 	}
 	
