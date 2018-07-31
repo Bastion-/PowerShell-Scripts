@@ -3,7 +3,7 @@
 Name: Server Information Retrieval Script
 Author:	Anthony Dunaway
 Date: 06/15/18
-Updated: 07/26/18
+Updated: 07/31/18
 Description:
 Helper script to grab our list of servers.
 Returns a list of Server objects
@@ -45,12 +45,7 @@ Function Get-ServerList{
     [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
 	[GC]::Collect()
 	Write-Verbose "List Complete"
-	if(($critical -eq $True) -or ($full -eq $True)){
-		Return $all_servers_dict
-	}
-	else{
-		Return $all_servers
-	}
+	Return $all_servers
 }
 
 #test the functionality
