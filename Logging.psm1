@@ -3,7 +3,7 @@
 Name: Logging Module
 Author:	Anthony Dunaway
 Date: 07/20/18
-Updated: 07/26/18
+Updated: 07/31/18
 Description:
 Logging Module
 -----------------------------------------------------------------------
@@ -31,7 +31,7 @@ function Get-CallingScriptName(){
 	$script = $calling_script_path.ToString().Split("\")
 	$script = $script[$script.Length - 1]
 	$script = $script.Split(".")
-	$script = $script[0] + "_log.txt"
+	$script = $script[0] + "_Log.txt"
 	Return $script	
 }
 
@@ -39,11 +39,11 @@ function Get-CallingScriptName(){
 function New-LogFile(){
 	[cmdletbinding()]
 	param(
-		[string] $path =  [Environment]::GetFolderPath("MyDocuments")
+		[string]$path =  [Environment]::GetFolderPath("MyDocuments"),
+		[string]$name
 	)
-	$script = Get-CallingScriptName
 	if(!(Test-Path -Path "$path\$script")){
-		New-Item -Path $path -Name $script | Out-Null 
+		New-Item -Path $path -Name $name | Out-Null 
 	}
 }
 
@@ -57,30 +57,37 @@ function Start-Log(){
 	The file name will be the name of the calling script _log.txt
 .PARAMETER path
 	Location where you would like the log file saved. Default is MyDocuments.
+.PARAMETER name
+	Name of the log file. Default is the name of the calling script.
 .EXAMPLE
-	Start-Log -path "C:\Development\"
+	Start-Log -path "C:\Development\" -name "log_name"
 #>
 	[cmdletbinding()]
 	param(
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
-		[string]$path
+		[string]$path,
+		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
+		[string]$name = "none"
 	)
-	$script = Get-CallingScriptName
-	if($path){
-		New-LogFile -path $path
+	if($name -eq "none"){
+		$name = Get-CallingScriptName
 	}
 	else{
-		New-LogFile 
+		$name = $name + ".txt"
+	}
+	if($path){
+		New-LogFile -path $path -name $name
+	}
+	else{
+		New-LogFile -name $name 
 		$path = [Environment]::GetFolderPath("MyDocuments")
 	}
 	$date = Get-Date -UFormat "%A %H:%M"
 	$content = "----------------------------------------------------------------------------------------
 Date: $date
-Beginning of $script 
-----------------------------------------------------------------------------------------
-
-"
-	Add-Content -Path "$path\$script" -Value $content
+Beginning of $name
+----------------------------------------------------------------------------------------"
+	Add-Content -Path "$path\$name" -Value $content
 }
 
 #Stop the log with informational footer
@@ -90,30 +97,41 @@ function Stop-Log(){
 	Adds a footer to the log file with the date and name of the calling script.
 .PARAMETER path
 	Location of the log file you would like to add a stop footer to. Defualt is MyDocuments.
+.PARAMETER name
+	Name of the log file. Default is the name of the calling script.
 .EXAMPLE
-	Stop-Log -path "C:\Development\"
+	Stop-Log -path "C:\Development\" -name "log_name"
 #>
 	[cmdletbinding()]
 	param(
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
-		[string]$path = [Environment]::GetFolderPath("MyDocuments")
-	)	
-	$script = Get-CallingScriptName	
+		[string]$path = [Environment]::GetFolderPath("MyDocuments"),
+		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
+		[string ]$name = "none"
+	)
+	if($name -eq "none"){
+		$name = Get-CallingScriptName
+	}
+	else{
+		$name = $name + ".txt"
+	}
 	$date = Get-Date -UFormat "%A %H:%M"
 	$content = "
 	
 ----------------------------------------------------------------------------------------
 Date: $date
-End of $script
+End of $name
 ----------------------------------------------------------------------------------------
 "	
-	Add-Content -Path "$path\$script" -Value $content
+	Add-Content -Path "$path\$name" -Value $content
 }
 
 function Add-LogEntry(){
 <#
 .SYNOPSIS
 	Adds an entry to the log file.
+.PARAMETER name
+	Name of the log file. Default is the name of the calling script.
 .PARAMETER info
 	Switch, if used prefixes INFORMATION: to the entry.
 .PARAMETER error
@@ -127,10 +145,12 @@ function Add-LogEntry(){
 .PARAMETER content
 	The text to be written to the log file.
 .EXAMPLE
-	Add-LogEntry -path "C:\Development\" -info -content "This will be written to the log file"
+	Add-LogEntry -name "log_name" -path "C:\Development\" -info -content "This will be written to the log file"
 #>
 	[cmdletbinding()]
 	param(
+		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
+		[string ]$name = "none",
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		[switch]$info,
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
@@ -143,25 +163,42 @@ function Add-LogEntry(){
 		[string]$path = [Environment]::GetFolderPath("MyDocuments"),
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		[string]$content
-	)	
-	$script = Get-CallingScriptName	
-	if($info){
-		$prefix = "INFORMATION: "
-	}
-	elseif($error){
-		$prefix = "ERROR: "
-	}
-	elseif($warning){
-		$prefix = "WARNING: "
-	}
-	elseif($debugging){
-		$prefix = "DEBUG: "
+	)
+	
+	if($name -eq "none"){
+		$name = Get-CallingScriptName
 	}
 	else{
-		$prefix = ""
+		$name = $name + ".txt"
+	}
+	
+	if($info){
+		$prefix = "
+		
+		INFORMATION: 	"
+	}
+	elseif($error){
+		$prefix = "
+		
+		ERROR: "
+	}
+	elseif($warning){
+		$prefix = "
+		
+		WARNING:  "
+	}
+	elseif($debugging){
+		$prefix = "
+		
+		DEBUG: "
+	}
+	else{
+		$prefix = "
+		
+		"
 	}
 	$content = $prefix + $content	
-	Add-Content -Path "$path\$script" -Value $content
+	Add-Content -Path "$path\$name" -Value $content
 	Write-Debug "Content"
 }
 
@@ -216,8 +253,6 @@ function Send-Log(){
 		$server = "smtp_mail.outlook.com"
 	}
 	
-	$script = Get-CallingScriptName
-	
 	$message = @{
 		SmtpServer = $server
 		Credential = $credential
@@ -225,8 +260,8 @@ function Send-Log(){
 		UseSsl = $true
 		From = $from
 		To = $to
-		Subject = "$script Log File Report"
-		Body = "Attached is the log file for $script"
+		Subject = "Log File"
+		Body = "Log File Attached"
 		Attachments = $attach
 	}
 	Send-MailMessage @message
