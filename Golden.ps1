@@ -131,7 +131,7 @@ else{
 Stop-Log -path $file_path -name $gold_report
 $mail = $outlook.CreateItem(0)
 $me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
-$team_lead = "kenneth.b.hill@dhsoha.state.or.us"
+$team_lead = "email"
 $mail.To = $me
 $mail.Cc = $team_lead
 $mail.Subject = "What's Up Gold Daily Report"
