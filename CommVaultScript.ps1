@@ -3,7 +3,7 @@
 Name: CommVault Backup Report Script
 Author: Anthony Dunaway
 Date: 01/16/18
-Updated: 07/26/18
+Updated: 08/01/18
 Description:
 This script gets all of the CommVault backup reports from the user's outlook inbox,
 copies our servers onto a new worksheet, and records missing and failed backups to their own
@@ -221,8 +221,10 @@ foreach($message in $cv_reports) {
 		
 		foreach($server in $server_list){
 			$server_location = $original.Cells.Find($server.Name)
-			while($original.Cells.Item($server_location.Row, 1).Value().ToString() -ne $server.Name){
-				$server_location = $original.Cells.FindNext($server_location)
+			if($server_location){
+				while($original.Cells.Item($server_location.Row, 1).Value().ToString() -ne $server.Name){
+					$server_location = $original.Cells.FindNext($server_location)
+				}
 			}
 			if($server_location){
 				$row = $server_location.Row
@@ -271,6 +273,12 @@ foreach($message in $cv_reports) {
 						$server_stats.Cells.Item($stats_row, $failed_ref).Value() = 0
 						$server_stats.Cells.Item($stats_row, $backup_ref).Value() = 0
 						$server_stats.Cells.Item($stats_row, $ignore_ref).Value() = 0
+					}
+					elseif(($critical -eq 0) -and ($backup_status -eq "CWE")){
+						$cwe_ignore = $original.Cells.Item($server_location.Row + 1, 1).Value().ToString()
+						if($cwe_ignore -match "quiesce" ){
+							$backup_status = "Completed"
+						}
 					}
 					#A value of 1 in column C means it needs to be reported. if the server is not critical and
 					#just had errors it increments the number of backup attempts by 1.
@@ -365,9 +373,9 @@ foreach($message in $cv_reports) {
 		Write-Verbose "GENERATION OF REPORT $savename COMPLETE"
 		$mail = $outlook.CreateItem(0)
 		$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
-		$anthony = "email"
-		$boris = "email"
-		$john = "email"
+		$anthony = "address"
+		$boris = "address"
+		$john = "address"
 		$mail.To = $me
 		if($send_reports -eq 1){
 			$mail.Cc = "$anthony; $boris; $john"
@@ -381,6 +389,8 @@ foreach($message in $cv_reports) {
 #Check if any servers need to be reported
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "CHECKING if ANY SERVERS NEED TO BE REPORTED"
+$log = "CommVault_Log"
+Start-Log -path $file_path -name $log
 #Check the server status database and create list of servers with failed backups
 $failed_servers = @{}
 $server_count = ($server_stats.UsedRange.Rows).count
@@ -398,15 +408,23 @@ for($line=2; $line -le $server_count; $line++){
 		}
 	}
 }
+if($failed_servers.Count -le 0 ){
+	Add-LogEntry -info -name $log -path $file_path -content "All servers were backed up successfully."
+}
+else{
+	$failed_count = $failed_servers.Count
+	Add-LogEntry -info -name $log -path $file_path -content "$failed_count of our servers had bad backups."
+}
 $server_db.Close()
 $excel.Quit()
+
 #------------------------------------------------------------------------------------------------------------------------------
 #Lookup who needs to know about failures
 #------------------------------------------------------------------------------------------------------------------------------
 if($failed_servers.Count -gt 0){
 	if($mass_failure_check -eq 1){
 		if($failed_servers.Count -gt 20){
-			#More than 10 servers had bad backups. Don't send notices. Manually verify that the backups failed.
+			#More than 20 servers had bad backups. Don't send notices. Manually verify that the backups failed.
 			$send_reports = 0
 			$mail = $outlook.CreateItem(0)
 			$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
@@ -431,6 +449,7 @@ if($failed_servers.Count -gt 0){
 		else{
 			$type = "NON-CRITICAL"
 		}
+		Add-LogEntry -warning -name $log -path $file_path -content "The $type server $bad_server had status $backup_status. It is used for $applications."
 #------------------------------------------------------------------------------------------------------------------------------
 #Create the email notifications and send them out
 #------------------------------------------------------------------------------------------------------------------------------
@@ -443,15 +462,15 @@ if($failed_servers.Count -gt 0){
 		#https://stackoverflow.com/questions/8666627/how-to-obtain-email-of-the-logged-in-user-in-powershell
 		$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
 		$team_lead = $server.Lead + "suffix"
-		$drm = "email"
+		$drm = "address"
 		Write-Verbose "if notifications are enabled they will be sent to $people_to_notify"
 		if($send_reports -eq 1){
 			Write-Verbose "REPORTING FAILURES TO THE STAFF RESPONSIBLE"
 			$mail = $outlook.CreateItem(0)
 			$mail.To = $to
-			$mail.Cc = $team_lead
+			$mail.Cc = "$team_lead; $me"
 			if($notify_drm -eq 1){
-				$mail.Cc = "$team_lead; $drm"
+				$mail.Cc = "$team_lead; $me; $drm"
 			}
 			if($backup_status -eq "Missing"){
 				$mail.Subject = "$type Server $bad_server Was Missed"
@@ -475,16 +494,9 @@ This message was generated by a script. if you believe you have received this me
 				$mail.Send()
 			}
 		}
-		if($send_reports -eq 1){
-			Write-Verbose "REPORTING TO SELF"
-			$mail = $outlook.CreateItem(0)
-			$mail.To = $me
-			$mail.Subject = "Server Backup Failure Notification Report"
-			$mail.Body = "The following people: $people_to_notify  were informed about the backup failure of: $bad_server"
-			$mail.Send()
-		}
 	}
 }
+Stop-Log -path $file_path -name $log
 $end_time = Get-Date
 $seconds = ($end_time - $start_time).TotalSeconds
 Write-Host "Total time taken to run the report was $seconds seconds"
