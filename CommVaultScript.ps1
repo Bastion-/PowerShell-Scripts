@@ -3,16 +3,13 @@
 Name: CommVault Backup Report Script
 Author: Anthony Dunaway
 Date: 01/16/18
-Updated: 08/01/18
+Updated: 09/5/18
 Description:
 This script gets all of the CommVault backup reports from the user's outlook inbox,
 copies our servers onto a new worksheet, and records missing and failed backups to their own
 respective worksheets. Once that is done it saves the file to sharepoint and deletes the
-temp files from the desktop. After that it will check if any servers failed and email the responsible parties.
+temp files. After that it will check if any servers failed and email the responsible parties.
 It marks each email as read after it is processed.
-This script was written for Powershell 5.0. Currently it does not operate correctly on
-Powershell 2.0 which is the Windows 7 default. The script is designed to run silently in the background.
-for best results schedule the script to run daily via the Windows task scheduler.
 -----------------------------------------------------------------------
 #>
 param(
@@ -23,6 +20,7 @@ param(
 # Imports
 #------------------------------------------------------------------------------------------------------------------------------
 $file_path = $PSScriptRoot.ToString()
+."$file_path\Helper_Scripts\Format_Report.ps1"
 ."$file_path\Helper_Scripts\Get_Server_Objects.ps1"
 ."$file_path\Helper_Scripts\Hide_Window.ps1"
 ."$file_path\Helper_Scripts\Swap_Columns.ps1"
@@ -87,9 +85,10 @@ if($show_excel -eq 1){
 $server_db_name = "ServerList.xlsx"
 $server_db = $excel.Workbooks.Open("$file_path\$server_db_name")
 $server_stats = $server_db.worksheets.item(1)
+$server_count = ($server_stats.UsedRange.Rows).count
 
 #------------------------------------------------------------------------------------------------------------------------------
-# Get the CommVault reports from Outlook and save a temp to the desktop
+# Get the CommVault reports from Outlook and save a temp to the folder
 #------------------------------------------------------------------------------------------------------------------------------
 Write-Verbose "GETTING REPORTS FROM OUTLOOK"
 Add-type -assembly "Microsoft.Office.Interop.Outlook" | out-null
@@ -125,11 +124,11 @@ if($cv_reports.Length -eq 0){
 
 foreach($message in $cv_reports) {
 	$file = $message.Attachments.Item(1).filename
-	$split_name = $file.ToString().split("_")
-	if($split_name[0] -eq "BackupJobSummaryReport"){
+	$split_name = $file.ToString().split("-")
+	if($split_name[0] -eq "BackupJobSummary"){
 		$savename = "CommVaultBackupReport-"
-		#Get the date out of the attachment name, format it, and append it to the report name
-		$savename = $savename + $split_name[4] + $split_name[2] + $split_name[3]
+		$report_date = Get-Date -UFormat "%Y%m%d"
+		$savename = $savename + $report_date
 		$message.Attachments.Item(1).saveasfile((Join-Path $file_path "$savename.xls"))
 #------------------------------------------------------------------------------------------------------------------------------
 #Open the CommVault report in Excel, setup report workbook
@@ -143,8 +142,8 @@ foreach($message in $cv_reports) {
 		$workbook.Sheets.Add() | out-null
 		$workbook.Sheets.Add() | out-null
 		$workbook.Sheets.Add() | out-null
-		$missing = $workbook.worksheets.item(1)
-		$match = $workbook.worksheets.item(2)
+		$match = $workbook.worksheets.item(1)
+		$missing = $workbook.worksheets.item(2)
 		$failed = $workbook.worksheets.item(3)
 		$original = $workbook.worksheets.item(4)
 		$missing.name = 'MissingServers'
@@ -152,38 +151,22 @@ foreach($message in $cv_reports) {
 		$failed.name = 'Failed'
 		
 		#Find the report header.
-		$location = $original.Cells.Find("Host Name")
+		$location = $original.Cells.Find("CommCell")
+		$location = $original.Cells.FindNext($location)
 		$header_begin = $location.Row
 		$header_end = $header_begin +1
 
-		#Find the first virtual machine header and status column
-		$status_column = "D"
-		$location = $original.Cells.Find("Machine Name")
-		$virtual_row = $location.Row
-		$status_column = $original.Range("A$($virtual_row):A$($virtual_row)").Find("Status").Column
-
 		#The column values are not static. This finds which columns have the information the script needs
 		$header = "A$($header_begin):A$($header_begin)"
-		$active = $original.Range($header).Find("Running").Column
-		$completed = $original.Range($header).Find("Completed").Column
-		$cwe = $original.Range($header).Find("Completed with errors").Column
-		$cww = $original.Range($header).Find("Completed with warnings").Column
-		$delayed = $original.Range($header).Find("Delayed").Column
-		$killed = $original.Range($header).Find("Killed").Column
+		$status_column = $original.Range($header).Find("Job Status").Column
 		$server_column = $original.Range($header).Find("Client").Column
-		$unsuccessful = $original.Range($header).Find("Unsuccessful").Column
 		
-		#ServerList Columns
+		#ServerList Columns: columns from the ServerList.xlsx DB
 		$server_ref = "A"
 		$status_ref = "B"
 		$failed_ref = "C"
 		$backup_ref = "D"
 		$ignore_ref = "E"
-		$critical_ref = "F"
-		$appdb_ref = "G"
-		$staff_ref = "H"
-		$lead_ref = "I"
-		$app_ref = "J"
 
 		#Copy the header and paste it into the first row of match and failed sheets add missing sheet header
 		$header = "A$($header_begin):A$($header_end)"
@@ -194,13 +177,10 @@ foreach($message in $cv_reports) {
 		$missing.Cells(1,1) = "List of Servers Not Found In Backup List"
 
 		#Create the Critical column for match and failed sheets
-		$critical_column = "S"
+		$critical_column = "AB"
 		$match.Cells(1,$critical_column) = "Critical"
 		$failed.Cells(1,$critical_column) = "Critical"
-		$match.Cells.Item(1,$critical_column).Interior.ColorIndex = 15
-		$match.Cells.Item(2,$critical_column).Interior.ColorIndex = 15
-		$failed.Cells.Item(1,$critical_column).Interior.ColorIndex = 15
-		$failed.Cells.Item(2,$critical_column).Interior.ColorIndex = 15
+
 #------------------------------------------------------------------------------------------------------------------------------
 #Copy our servers onto the match worksheet
 #------------------------------------------------------------------------------------------------------------------------------
@@ -208,43 +188,16 @@ foreach($message in $cv_reports) {
 		#Saves any servers which were not found
 		$missing_servers = @()
 		
-		#Hash table of backup status values
-		$status_list = [ordered]@{$completed.ToString() = "Completed"; $active.ToString() = "Active"; $delayed.ToString() = "Delayed"; 
-			$cww.ToString() = "CWW"; $cwe.ToString() = "CWE"; $unsuccessful.ToString() = "Failed"; $killed.ToString() = "Killed"}
-		
-		#Hash table to convert virtual machine status values to standardized status values
-		$virtual_stats = @{"Failed" = "Failed"; "Killed" = "Killed"; "Completed with errors" = "CWE"; "Completed" = "Completed"; 
-			"In Progress" = "Active"; "Waiting" = "Delayed"; "Completed with warnings" = "CWW" }
-		
 		#Hash table of Excel background color values
-		$color_values = @{Active = 42; Completed = 35; CWE = 40; CWW = 8; Delayed = 39; Failed = 18; Killed = 38; Unknown = 18}
+		$color_values = @{"Running" = 42; "Completed" = 35; "Completed with errors" = 40; "Completed with warnings" = 8; 
+			"Delayed" = 39; "Failed" = 18; "Killed" = 38; "Unknown" = 18; "No Run" = 18}
 		
 		foreach($server in $server_list){
 			$server_location = $original.Cells.Find($server.Name)
 			if($server_location){
-				while($original.Cells.Item($server_location.Row, 1).Value().ToString() -ne $server.Name){
-					$server_location = $original.Cells.FindNext($server_location)
-				}
-			}
-			if($server_location){
-				$row = $server_location.Row
-				$critical = $server.Critical
-				if($row -lt $virtual_row){
-					foreach($status in $status_list.keys){
-						if($original.Cells.Item($row, [int]$status).Value() -gt 0){
-							$backup_status = $status_list[$status]
-							Break
-						}
-						else{
-							$backup_status = "Unknown"
-						}
-					}
-				}
-				else{
-					$status = $original.Cells.Item($row,$status_column).Value()
-					$backup_status = $virtual_stats[$status]
-				}
 				#found a match. Copy the row and paste to match worksheet
+				$row = $server_location.Row
+				$backup_status = $original.Cells.Item($row,$status_column).Value().ToString()
 				$color = $color_values[$backup_status]
 				$original_range = $original.Range("A$($row):A$($row)").EntireRow
 				$original_range.Copy() | out-null
@@ -252,7 +205,7 @@ foreach($message in $cv_reports) {
 				$match_range = $match.Range("A$($match_row):A$($match_row)")
 				$match.Paste($match_range)
 				$match.Cells($match_row, 1).EntireRow.Interior.ColorIndex = $color
-				if($critical -eq 1){
+				if($server.Critical -eq 1){
 					$color_value = 6
 					$crit_status = "Y"
 				}
@@ -274,19 +227,13 @@ foreach($message in $cv_reports) {
 						$server_stats.Cells.Item($stats_row, $backup_ref).Value() = 0
 						$server_stats.Cells.Item($stats_row, $ignore_ref).Value() = 0
 					}
-					elseif(($critical -eq 0) -and ($backup_status -eq "CWE")){
-						$cwe_ignore = $original.Cells.Item($server_location.Row + 1, 1).Value().ToString()
-						if($cwe_ignore -match "quiesce" ){
-							$backup_status = "Completed"
-						}
-					}
 					#A value of 1 in column C means it needs to be reported. if the server is not critical and
 					#just had errors it increments the number of backup attempts by 1.
-					elseif(($backup_status -eq "Failed") -or ($backup_status -eq "Killed")){
+					elseif(($backup_status -eq "Failed") -or ($backup_status -eq "Killed") -or ($backup_status -eq "No Run") ){
 						$server_stats.Cells.Item($stats_row, $failed_ref).Value() = 1
 						$server_stats.Cells.Item($stats_row, $backup_ref).Value() = $server_stats.Cells.Item($stats_row, $backup_ref).Value() + 1
 					}
-					elseif($critical -eq 1){
+					elseif($server.Critical -eq 1){
 						$server_stats.Cells.Item($stats_row, $failed_ref).Value() = 1
 					}
 					else{
@@ -313,10 +260,34 @@ foreach($message in $cv_reports) {
 			}
 		}	
 #------------------------------------------------------------------------------------------------------------------------------
-#Move critical column from S to A
+#Move columns around and delete unwanted columns to make it easier to view useful information.
 #------------------------------------------------------------------------------------------------------------------------------
-		Move-Columns -worksheet $match -from "S" -to "A"
-		Move-Columns -worksheet $failed -from "S" -to "A"
+		$number_to_letter = @("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z")
+		Move-Columns -worksheet $match -from $number_to_letter[$status_column - 1] -to "A"
+		Move-Columns -worksheet $failed -from $number_to_letter[$status_column - 1] -to "A"
+		Move-Columns -worksheet $match -from $number_to_letter[$server_column]-to "A"
+		Move-Columns -worksheet $failed -from $number_to_letter[$server_column] -to "A"
+		Move-Columns -worksheet $match -from $critical_column -to "A"
+		Move-Columns -worksheet $failed -from $critical_column -to "A"
+		
+		$header = "A1:A1"
+		#Columns to remove
+		$remove_columns = @("CommCell", "JobId", "Agent", "Instance", "BackupSet", "Subclient", "Operation Type", "MediaAgent", 
+			"Storage Policy", "Dedup", "Throughput", "Start Time", "End Time", "Protected Objects", "Failed Objects", "Failed Folders", "Client Group", 
+			"Sync", "Duration", "VM HyperVisor", "VM Size", "VM Guest Size", "VM Guest Tools", "VM Transport", "VM CBT", "VM Operating",
+			"Proxy", "ClientId", "VM GUID")
+		
+		foreach($column in $remove_columns){
+			$delete_column = $match.Range($header).Find($column).Column
+			[void]$match.Cells.Item(1,$delete_column).EntireColumn.Delete()
+			[void]$failed.Cells.Item(1,$delete_column).EntireColumn.Delete()
+		}
+#------------------------------------------------------------------------------------------------------------------------------
+#Cleanup the formatting, the new reports look really bad without formatting.
+#------------------------------------------------------------------------------------------------------------------------------
+		Format-Report -worksheet $match -server_count $server_count
+		Format-Report -worksheet $failed -server_count $server_count
+
 #------------------------------------------------------------------------------------------------------------------------------
 #Check for any missing servers and save them to missing worksheet
 #------------------------------------------------------------------------------------------------------------------------------
@@ -373,9 +344,9 @@ foreach($message in $cv_reports) {
 		Write-Verbose "GENERATION OF REPORT $savename COMPLETE"
 		$mail = $outlook.CreateItem(0)
 		$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
-		$anthony = "address"
-		$boris = "address"
-		$john = "address"
+		$anthony = "email"
+		$boris = "email"
+		$john = "email"
 		$mail.To = $me
 		if($send_reports -eq 1){
 			$mail.Cc = "$anthony; $boris; $john"
@@ -393,7 +364,6 @@ $log = "CommVault_Log"
 Start-Log -path $file_path -name $log
 #Check the server status database and create list of servers with failed backups
 $failed_servers = @{}
-$server_count = ($server_stats.UsedRange.Rows).count
 for($line=2; $line -le $server_count; $line++){
 	$server_name = $server_stats.Cells.Item($line,$server_ref).Value()
 	$server_status = $server_stats.Cells.Item($line, $status_ref).Value()
@@ -423,14 +393,14 @@ $excel.Quit()
 #------------------------------------------------------------------------------------------------------------------------------
 if($failed_servers.Count -gt 0){
 	if($mass_failure_check -eq 1){
-		if($failed_servers.Count -gt 20){
+		if($failed_servers.Count -gt 30){
 			#More than 20 servers had bad backups. Don't send notices. Manually verify that the backups failed.
 			$send_reports = 0
 			$mail = $outlook.CreateItem(0)
 			$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
 			$mail.To = $me
 			$mail.Subject = "Mass Server Backup Failure"
-			$mail.Body = "More than 20 servers had backup failures. Verify that the report was generated correctly"
+			$mail.Body = "More than 30 servers had backup failures. Verify that the report was generated correctly"
 			$mail.Send()
 		}
 	}
@@ -438,18 +408,18 @@ if($failed_servers.Count -gt 0){
 	#Get the stats of each failed server
 	foreach($bad_server in $failed_servers.Keys){
 		$server = $server_list| Where-Object {$_.Name -eq $bad_server}
-		$is_critical = $server.Critical
 		$backup_status = $failed_servers[$bad_server]
 		$notify_drm = $server.AppDB
 		$people_to_notify = $server.Staff
 		$applications = $server.Applications
-		if($is_critical -eq 1){
+		if($server.Critical -eq 1){
 			$type = "CRITICAL"
 		}
 		else{
 			$type = "NON-CRITICAL"
 		}
-		Add-LogEntry -warning -name $log -path $file_path -content "The $type server $bad_server had status $backup_status. It is used for $applications."
+		Add-LogEntry -warning -name $log -path 
+		$file_path -content "The $type server $bad_server had status $backup_status. It is used for $applications."
 #------------------------------------------------------------------------------------------------------------------------------
 #Create the email notifications and send them out
 #------------------------------------------------------------------------------------------------------------------------------
@@ -462,7 +432,7 @@ if($failed_servers.Count -gt 0){
 		#https://stackoverflow.com/questions/8666627/how-to-obtain-email-of-the-logged-in-user-in-powershell
 		$me = ([adsi]"LDAP://$(whoami /fqdn)").mail.ToString()
 		$team_lead = $server.Lead + "suffix"
-		$drm = "address"
+		$drm = "email"
 		Write-Verbose "if notifications are enabled they will be sent to $people_to_notify"
 		if($send_reports -eq 1){
 			Write-Verbose "REPORTING FAILURES TO THE STAFF RESPONSIBLE"
@@ -473,15 +443,16 @@ if($failed_servers.Count -gt 0){
 				$mail.Cc = "$team_lead; $me; $drm"
 			}
 			if($backup_status -eq "Missing"){
+				$mail.Cc += "; email"
 				$mail.Subject = "$type Server $bad_server Was Missed"
 				$mail.Body = "The $type server $bad_server was not included in the CommVault backup. Please investigate why the 
 server was missed. $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
 				$mail.Send()
 			}
-			elseif(($backup_status -eq "Active") -and ($is_critical -eq 1)){
-				$mail.Subject = "CRITICAL Server $bad_server Backup is Active"
-				$mail.Body = "The backup for CRITICAL server $bad_server is still Active. Please monitor this backup for completion.
+			elseif(($backup_status -eq "Running") -and ($server.Critical -eq 1)){
+				$mail.Subject = "CRITICAL Server $bad_server Backup is Running"
+				$mail.Body = "The backup for CRITICAL server $bad_server is still running. Please monitor this backup for completion.
 $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
 				$mail.Send()
@@ -489,7 +460,7 @@ This message was generated by a script. if you believe you have received this me
 			else{
 				$mail.Subject = "$type Server $bad_server Failed Backup"
 				$mail.Body = "The backup for $type server $bad_server had status $backup_status. It has failed or had 
-errors for 3 days or more. Please investigate. $bad_server is used for $applications
+abnormal backups for 3 days or more. Please investigate. $bad_server is used for $applications
 This message was generated by a script. if you believe you have received this message in error contact $me."
 				$mail.Send()
 			}
