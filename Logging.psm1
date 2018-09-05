@@ -3,7 +3,7 @@
 Name: Logging Module
 Author:	Anthony Dunaway
 Date: 07/20/18
-Updated: 07/31/18
+Updated: 08/01/18
 Description:
 Logging Module
 -----------------------------------------------------------------------
@@ -82,7 +82,7 @@ function Start-Log(){
 		New-LogFile -name $name 
 		$path = [Environment]::GetFolderPath("MyDocuments")
 	}
-	$date = Get-Date -UFormat "%A %H:%M"
+	$date = Get-Date -Format "F"
 	$content = "----------------------------------------------------------------------------------------
 Date: $date
 Beginning of $name
@@ -115,7 +115,7 @@ function Stop-Log(){
 	else{
 		$name = $name + ".txt"
 	}
-	$date = Get-Date -UFormat "%A %H:%M"
+	$date = Get-Date -Format "F"
 	$content = "
 	
 ----------------------------------------------------------------------------------------
@@ -133,13 +133,13 @@ function Add-LogEntry(){
 .PARAMETER name
 	Name of the log file. Default is the name of the calling script.
 .PARAMETER info
-	Switch, if used prefixes INFORMATION: to the entry.
+	If used prefixes INFORMATION: to the entry.
 .PARAMETER error
-	Switch, if used prefixes ERROR: to the entry.
+	If used prefixes ERROR: to the entry.
 .PARAMETER warning
-	Switch, if used prefixes WARNING: to the entry.
+	If used prefixes WARNING: to the entry.
 .PARAMETER debugging
-	Switch, if used prefixes DEBUG: to the entry.
+	If used prefixes DEBUG: to the entry.
 .PARAMETER path
 	Location of the log file to add an entry to
 .PARAMETER content
@@ -232,7 +232,7 @@ function Send-Log(){
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		[string]$attach,
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
-		[string[]]$credentials = @("anthony.dunaway", "C:\Development\Password_Files", "gmail.txt"),
+		[string[]]$credentials = @("name.lastname", "C:\Development\Password_Files", "gmail.txt"),
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
 		$pscred = 0,
 		[parameter(ValueFromPipelineByPropertyName,ValueFromPipeline)]
