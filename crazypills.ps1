@@ -4,9 +4,9 @@ Name: 	Crazy Pills Prank Script
 Author:	Anthony Dunaway
 Date:     	04/16/2018
 Description:
-Minimizes and maximizes everything on the users screen between 1 and 3 times while mocking them.
+Minimizes and maximizes everything on the user's screen between 1 and 3 times while mocking them.
 It activates randomly at an interval between 5 and 10 minutes. Just cut and paste it into a PowerShell 
-window and your unsuspecting victim will fell like they are taking crazy pills.
+window and your unsuspecting victim will feel like they are taking crazy pills.
 -----------------------------------------------------------------------
 #>
 #This is setup in an if statement so that it does not autorun on older versions of powershell. 
